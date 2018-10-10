@@ -619,7 +619,9 @@ class ParseObject {
       readonly = readonly.concat(this.constructor.readOnlyAttributes());
     }
     for (var k in changes) {
-      if (k === 'createdAt' || k === 'updatedAt') {
+      // Allow to set createdAt field
+      if (k === 'updatedAt') { 
+        // k === 'createdAt'
         // This property is read-only, but for legacy reasons we silently
         // ignore it
         continue;
@@ -945,7 +947,7 @@ class ParseObject {
   clear(): ParseObject | boolean {
     var attributes = this.attributes;
     var erasable = {};
-    var readonly = ['createdAt', 'updatedAt'];
+    var readonly = ['updatedAt'];//'createdAt',
     if (typeof this.constructor.readOnlyAttributes === 'function') {
       readonly = readonly.concat(this.constructor.readOnlyAttributes());
     }
