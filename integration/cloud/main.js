@@ -7,6 +7,17 @@ Parse.Cloud.define("bar", function(request) {
   }
 });
 
+Parse.Cloud.define('TestFetchFromLocalDatastore', function (request) {
+  const object = new Parse.Object('Item');
+  object.id = request.params.id;
+  object.set('foo', 'changed');
+  return object.save();
+});
+
+Parse.Cloud.define('CloudFunctionUndefined', function() {
+  return undefined;
+});
+
 Parse.Cloud.job('CloudJob1', function() {
   return {
     status: 'cloud job completed'

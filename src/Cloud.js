@@ -48,7 +48,7 @@ export function run(
     throw new TypeError('Cloud function name must be a string.');
   }
 
-  var requestOptions = {};
+  const requestOptions = {};
   if (options.useMasterKey) {
     requestOptions.useMasterKey = options.useMasterKey;
   }
@@ -104,15 +104,15 @@ export function startJob(
   * @return {Parse.Object} Status of Job.
   */
 export function getJobStatus(jobStatusId: string): Promise {
-  var query = new ParseQuery('_JobStatus');
+  const query = new ParseQuery('_JobStatus');
   return query.get(jobStatusId, { useMasterKey: true });
 }
 
 const DefaultController = {
   run(name, data, options) {
-    var RESTController = CoreManager.getRESTController();
+    const RESTController = CoreManager.getRESTController();
 
-    var payload = encode(data, true);
+    const payload = encode(data, true);
 
     const request = RESTController.request(
       'POST',
@@ -122,19 +122,24 @@ const DefaultController = {
     );
 
     return request.then((res) => {
+      if (typeof res === 'object' &&
+          Object.keys(res).length > 0 &&
+          !res.hasOwnProperty('result')) {
+        throw new ParseError(
+          ParseError.INVALID_JSON,
+          'The server returned an invalid response.'
+        );
+      }
       const decoded = decode(res);
       if (decoded && decoded.hasOwnProperty('result')) {
         return Promise.resolve(decoded.result);
       }
-      throw new ParseError(
-        ParseError.INVALID_JSON,
-        'The server returned an invalid response.'
-      );
+      return Promise.resolve(undefined);
     });
   },
 
   getJobsData(options) {
-    var RESTController = CoreManager.getRESTController();
+    const RESTController = CoreManager.getRESTController();
 
     return RESTController.request(
       'GET',
@@ -145,9 +150,9 @@ const DefaultController = {
   },
 
   startJob(name, data, options) {
-    var RESTController = CoreManager.getRESTController();
+    const RESTController = CoreManager.getRESTController();
 
-    var payload = encode(data, true);
+    const payload = encode(data, true);
 
     return RESTController.request(
       'POST',
