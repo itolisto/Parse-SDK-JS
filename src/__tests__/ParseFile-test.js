@@ -37,8 +37,15 @@ describe('ParseFile', () => {
     CoreManager.setFileController({
       saveFile: generateSaveMock('http://files.parsetfss.com/a/'),
       saveBase64: generateSaveMock('http://files.parsetfss.com/a/'),
-      saveUri: generateSaveMock('http://files.parsetfss.com/a/'),
+      download: () => Promise.resolve({
+        base64: 'ParseA==',
+        contentType: 'image/png',
+      }),
     });
+  });
+
+  afterEach(() => {
+    process.env.PARSE_BUILD = 'node';
   });
 
   it('can create files with base64 encoding', () => {
@@ -270,17 +277,9 @@ describe('FileController', () => {
     });
   });
 
-  it('saveUri without uri type', () => {
-    try {
-      defaultController.saveUri('name', { format: 'unknown' });
-    } catch (error) {
-      expect(error.message).toBe('saveUri can only be used with Uri-type sources.');
-    }
-  });
-
   it('saveUri with uri type', async () => {
-    const source = { format: 'uri', uri: 'https://example.com/image.png' };
-    jest.spyOn(
+    const file = new ParseFile('parse.png', { uri: 'https://example.com/image.png' });
+    const spy = jest.spyOn(
       defaultController,
       'download'
     )
@@ -292,17 +291,19 @@ describe('FileController', () => {
       });
 
     jest.spyOn(defaultController, 'saveBase64');
-    await defaultController.saveUri('fileName', source, {});
+    await file.save();
     expect(defaultController.download).toHaveBeenCalledTimes(1);
     expect(defaultController.saveBase64).toHaveBeenCalledTimes(1);
     expect(defaultController.saveBase64.mock.calls[0]).toEqual([
-      'fileName',
+      'parse.png',
       { format: 'base64', base64: 'ParseA==', type: 'image/png' },
       {}
     ]);
+    spy.mockRestore();
   });
 
   it('download with base64 http', async () => {
+    defaultController._setXHR(null);
     const mockResponse = Object.create(EventEmitter.prototype);
     EventEmitter.call(mockResponse);
     mockResponse.setEncoding = function() {}
@@ -328,6 +329,7 @@ describe('FileController', () => {
   });
 
   it('download with base64 https', async () => {
+    defaultController._setXHR(null);
     const mockResponse = Object.create(EventEmitter.prototype);
     EventEmitter.call(mockResponse);
     mockResponse.setEncoding = function() {}
@@ -349,6 +351,94 @@ describe('FileController', () => {
     expect(data.contentType).toBe('image/png');
     expect(mockHttp.get).toHaveBeenCalledTimes(0);
     expect(mockHttps.get).toHaveBeenCalledTimes(1);
+    spy.mockRestore();
+  });
+
+  it('download with ajax', async () => {
+    const mockXHR = function () {
+      return {
+        open: jest.fn(),
+        send: jest.fn().mockImplementation(function() {
+          this.response = [61, 170, 236, 120];
+          this.readyState = 2;
+          this.onreadystatechange();
+          this.readyState = 4;
+          this.onreadystatechange();
+        }),
+        getResponseHeader: function() {
+          return 'image/png';
+        }
+      };
+    };
+    defaultController._setXHR(mockXHR);
+
+    const data = await defaultController.download('https://example.com/image.png');
+    expect(data.base64).toBe('ParseA==');
+    expect(data.contentType).toBe('image/png');
+  });
+
+  it('download with ajax error', async () => {
+    const mockXHR = function () {
+      return {
+        open: jest.fn(),
+        send: jest.fn().mockImplementation(function() {
+          this.onerror('error thrown');
+        })
+      };
+    };
+    defaultController._setXHR(mockXHR);
+
+    try {
+      await defaultController.download('https://example.com/image.png');
+    } catch (e) {
+      expect(e).toBe('error thrown');
+    }
+  });
+
+  it('download with xmlhttprequest unsupported', async () => {
+    defaultController._setXHR(null);
+    process.env.PARSE_BUILD = 'browser';
+    try {
+      await defaultController.download('https://example.com/image.png');
+    } catch (e) {
+      expect(e).toBe('Cannot make a request: No definition of XMLHttpRequest was found.');
+    }
+  });
+
+  it('getData', async () => {
+    const file = new ParseFile('parse.png', [61, 170, 236, 120]);
+    const data = await file.getData();
+    expect(data).toBe('ParseA==');
+  });
+
+  it('getData unsaved file', async () => {
+    const file = new ParseFile('parse.png');
+    try {
+      await file.getData();
+    } catch (e) {
+      expect(e.message).toBe('Cannot retrieve data for unsaved ParseFile.');
+    }
+  });
+
+  it('getData via download', async () => {
+    const file = new ParseFile('parse.txt', { base64: 'ParseA==' });
+    file._data = null;
+    const result = await file.save();
+
+    const spy = jest.spyOn(
+      defaultController,
+      'download'
+    )
+      .mockImplementationOnce(() => {
+        return Promise.resolve({
+          base64: 'ParseA==',
+          contentType: 'image/png',
+        });
+      });
+
+    const data = await result.getData();
+    expect(defaultController.download).toHaveBeenCalledTimes(1);
+    expect(data).toBe('ParseA==');
     spy.mockRestore();
   });
 });

@@ -16,7 +16,9 @@ import ParseError from './ParseError';
 import ParseGeoPoint from './ParseGeoPoint';
 import ParseObject from './ParseObject';
 import OfflineQuery from './OfflineQuery';
+import { DEFAULT_PIN } from './LocalDatastoreUtils';
 
+import type LiveQuerySubscription from './LiveQuerySubscription';
 import type { RequestOptions, FullOptions } from './RESTController';
 
 type BatchOptions = FullOptions & { batchSize?: number };
@@ -50,7 +52,7 @@ function quote(s: string) {
  * Extracts the class name from queries. If not all queries have the same
  * class name an error will be thrown.
  */
-function _getClassNameFromQueries(queries: Array<ParseQuery>): string {
+function _getClassNameFromQueries(queries: Array<ParseQuery>): ?string {
   let className = null;
   queries.forEach((q) => {
     if (!className) {
@@ -312,7 +314,7 @@ class ParseQuery {
   /**
    * Converts string for regular expression at the beginning
    */
-  _regexStartWith(string: string): String {
+  _regexStartWith(string: string): string {
     return '^' + quote(string);
   }
 
@@ -481,7 +483,7 @@ class ParseQuery {
    * @return {Promise} A promise that is resolved with the result when
    * the query completes.
    */
-  get(objectId: string, options?: FullOptions): Promise {
+  get(objectId: string, options?: FullOptions): Promise<ParseObject> {
     this.equalTo('objectId', objectId);
 
     const firstOptions = {};
@@ -521,7 +523,7 @@ class ParseQuery {
    * @return {Promise} A promise that is resolved with the results when
    * the query completes.
    */
-  find(options?: FullOptions): Promise {
+  find(options?: FullOptions): Promise<Array<ParseObject>> {
     options = options || {};
 
     const findOptions = {};
@@ -580,7 +582,7 @@ class ParseQuery {
    * @return {Promise} A promise that is resolved with the count when
    * the query completes.
    */
-  count(options?: FullOptions): Promise {
+  count(options?: FullOptions): Promise<number> {
     options = options || {};
 
     const findOptions = {};
@@ -618,12 +620,12 @@ class ParseQuery {
    *
    * @return {Promise} A promise that is resolved with the query completes.
    */
-  distinct(key: string, options?: FullOptions): Promise {
+  distinct(key: string, options?: FullOptions): Promise<Array<mixed>> {
     options = options || {};
 
-    const distinctOptions = {
-      useMasterKey: true
-    };
+    const distinctOptions = {};
+    distinctOptions.useMasterKey = true;
+
     if (options.hasOwnProperty('sessionToken')) {
       distinctOptions.sessionToken = options.sessionToken;
     }
@@ -653,12 +655,12 @@ class ParseQuery {
    *
    * @return {Promise} A promise that is resolved with the query completes.
    */
-  aggregate(pipeline: mixed, options?: FullOptions): Promise {
+  aggregate(pipeline: mixed, options?: FullOptions): Promise<Array<mixed>> {
     options = options || {};
 
-    const aggregateOptions = {
-      useMasterKey: true,
-    };
+    const aggregateOptions = {};
+    aggregateOptions.useMasterKey = true;
+
     if (options.hasOwnProperty('sessionToken')) {
       aggregateOptions.sessionToken = options.sessionToken;
     }
@@ -695,7 +697,7 @@ class ParseQuery {
    * @return {Promise} A promise that is resolved with the object when
    * the query completes.
    */
-  first(options?: FullOptions): Promise {
+  first(options?: FullOptions): Promise<ParseObject | void> {
     options = options || {};
 
     const findOptions = {};
@@ -764,7 +766,7 @@ class ParseQuery {
    * @return {Promise} A promise that will be fulfilled once the
    *     iteration has completed.
    */
-  each(callback: (obj: ParseObject) => any, options?: BatchOptions): Promise {
+  each(callback: (obj: ParseObject) => any, options?: BatchOptions): Promise<Array<ParseObject>> {
     options = options || {};
 
     if (this._order || this._skip || (this._limit >= 0)) {
@@ -966,11 +968,11 @@ class ParseQuery {
       values = [values];
     }
 
-    values = values.map(function (value) {
-      return {"$regex": _this._regexStartWith(value)};
+    const regexObject = values.map((value) => {
+      return { '$regex': _this._regexStartWith(value) };
     });
 
-    return this.containsAll(key, values);
+    return this.containsAll(key, regexObject);
   }
 
   /**
@@ -1138,7 +1140,9 @@ class ParseQuery {
       throw new Error('The value being searched for must be a string.');
     }
 
-    const fullOptions = { $term: value };
+    const fullOptions = {};
+    fullOptions.$term = value;
+
     for (const option in options) {
       switch (option) {
       case 'language':
@@ -1301,7 +1305,7 @@ class ParseQuery {
    * @param {Array} array of geopoints
    * @return {Parse.Query} Returns the query, so you can chain this call.
    */
-  withinPolygon(key: string, points: Array): ParseQuery {
+  withinPolygon(key: string, points: Array<Array<number>>): ParseQuery {
     return this._addCondition(key, '$geoWithin', { '$polygon': points });
   }
 
@@ -1478,12 +1482,20 @@ class ParseQuery {
 
   /**
    * Subscribe this query to get liveQuery updates
-   * @return {LiveQuerySubscription} Returns the liveQuerySubscription, it's an event emitter
+   *
+   * @return {Promise<LiveQuerySubscription>} Returns the liveQuerySubscription, it's an event emitter
    * which can be used to get liveQuery updates.
    */
-  subscribe(): any {
-    const controller = CoreManager.getLiveQueryController();
-    return controller.subscribe(this);
+  async subscribe(): Promise<LiveQuerySubscription> {
+    const currentUser = await CoreManager.getUserController().currentUserAsync();
+    const sessionToken =  currentUser ? currentUser.getSessionToken() : undefined;
+
+    const liveQueryClient = await CoreManager.getLiveQueryController().getDefaultLiveQueryClient();
+    if (liveQueryClient.shouldOpen()) {
+      liveQueryClient.open();
+    }
+    const subscription = liveQueryClient.subscribe(this, sessionToken);
+    return subscription;
   }
 
   /**
@@ -1542,33 +1554,40 @@ class ParseQuery {
 
   /**
    * Changes the source of this query to all pinned objects.
+   *
+   * @return {Parse.Query} Returns the query, so you can chain this call.
    */
-  fromLocalDatastore() {
-    this.fromPinWithName(null);
+  fromLocalDatastore(): ParseQuery {
+    return this.fromPinWithName(null);
   }
 
   /**
    * Changes the source of this query to the default group of pinned objects.
+   *
+   * @return {Parse.Query} Returns the query, so you can chain this call.
    */
-  fromPin() {
-    const localDatastore = CoreManager.getLocalDatastore();
-    this.fromPinWithName(localDatastore.DEFAULT_PIN);
+  fromPin(): ParseQuery {
+    return this.fromPinWithName(DEFAULT_PIN);
   }
 
   /**
    * Changes the source of this query to a specific group of pinned objects.
+   *
+   * @param {String} name The name of query source.
+   * @return {Parse.Query} Returns the query, so you can chain this call.
    */
-  fromPinWithName(name: string) {
+  fromPinWithName(name?: string): ParseQuery {
     const localDatastore = CoreManager.getLocalDatastore();
     if (localDatastore.checkIfEnabled()) {
       this._queriesLocalDatastore = true;
       this._localDatastorePinName = name;
     }
+    return this;
   }
 }
 
 const DefaultController = {
-  find(className: string, params: QueryJSON, options: RequestOptions): Promise {
+  find(className: string, params: QueryJSON, options: RequestOptions): Promise<Array<ParseObject>> {
     const RESTController = CoreManager.getRESTController();
 
     return RESTController.request(
@@ -1579,7 +1598,7 @@ const DefaultController = {
     );
   },
 
-  aggregate(className: string, params: any, options: RequestOptions): Promise {
+  aggregate(className: string, params: any, options: RequestOptions): Promise<Array<mixed>> {
     const RESTController = CoreManager.getRESTController();
 
     return RESTController.request(

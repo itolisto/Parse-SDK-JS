@@ -8,14 +8,18 @@
  *
  * @flow
  */
-/* global File */
+/* global XMLHttpRequest, File */
 import CoreManager from './CoreManager';
 import type { FullOptions } from './RESTController';
-const http = require('http');
-const https = require('https');
+
+let XHR = null;
+if (typeof XMLHttpRequest !== 'undefined') {
+  XHR = XMLHttpRequest;
+}
 
 type Base64 = { base64: string };
-type FileData = Array<number> | Base64 | File;
+type Uri = { uri: string };
+type FileData = Array<number> | Base64 | File | Uri;
 export type FileSource = {
   format: 'file';
   file: File;
@@ -61,7 +65,8 @@ class ParseFile {
   _name: string;
   _url: ?string;
   _source: FileSource;
-  _previousSave: ?Promise;
+  _previousSave: ?Promise<ParseFile>;
+  _data: ?string;
 
   /**
    * @param name {String} The file's name. This will be prefixed by a unique
@@ -98,9 +103,10 @@ class ParseFile {
 
     if (data !== undefined) {
       if (Array.isArray(data)) {
+        this._data = ParseFile.encodeBase64(data);
         this._source = {
           format: 'base64',
-          base64: ParseFile.encodeBase64(data),
+          base64: this._data,
           type: specifiedType
         };
       } else if (typeof File !== 'undefined' && data instanceof File) {
@@ -122,12 +128,14 @@ class ParseFile {
         if (commaIndex !== -1) {
           const matches = dataUriRegexp.exec(base64.slice(0, commaIndex + 1));
           // if data URI with type and charset, there will be 4 matches.
+          this._data = base64.slice(commaIndex + 1);
           this._source = {
             format: 'base64',
-            base64: base64.slice(commaIndex + 1),
+            base64: this._data,
             type: matches[1]
           };
         } else {
+          this._data = base64;
           this._source = {
             format: 'base64',
             base64: base64,
@@ -140,6 +148,25 @@ class ParseFile {
     }
   }
 
+  /**
+   * Return the data for the file, downloading it if not already present.
+   * Data is present if initialized with Byte Array, Base64 or Saved with Uri.
+   * Data is cleared if saved with File object selected with a file upload control
+   *
+   * @return {Promise} Promise that is resolve with base64 data
+   */
+  async getData(): Promise<String> {
+    if (this._data) {
+      return this._data;
+    }
+    if (!this._url) {
+      throw new Error('Cannot retrieve data for unsaved ParseFile.');
+    }
+    const controller = CoreManager.getFileController();
+    const result = await controller.download(this._url);
+    this._data = result.base64;
+    return this._data;
+  }
   /**
    * Gets the name of the file. Before save is called, this is the filename
    * given by the user. After save is called, that name gets prefixed with a
@@ -186,10 +213,19 @@ class ParseFile {
         this._previousSave = controller.saveFile(this._name, this._source, options).then((res) => {
           this._name = res.name;
           this._url = res.url;
+          this._data = null;
           return this;
         });
       } else if (this._source.format === 'uri') {
-        this._previousSave = controller.saveUri(this._name, this._source, options).then((res) => {
+        this._previousSave = controller.download(this._source.uri).then((result) => {
+          const newSource = {
+            format: 'base64',
+            base64: result.base64,
+            type: result.contentType,
+          };
+          this._data = result.base64;
+          return controller.saveBase64(this._name, newSource, options);
+        }).then((res) => {
           this._name = res.name;
           this._url = res.url;
           return this;
@@ -296,38 +332,53 @@ const DefaultController = {
     return CoreManager.getRESTController().request('POST', path, data, options);
   },
 
-  saveUri: function(name: string, source: FileSource, options?: FullOptions) {
-    if (source.format !== 'uri') {
-      throw new Error('saveUri can only be used with Uri-type sources.');
+  download: function(uri) {
+    if (XHR) {
+      return this.downloadAjax(uri);
+    } else if (process.env.PARSE_BUILD === 'node') {
+      return new Promise((resolve, reject) => {
+        const client = uri.indexOf('https') === 0
+          ? require('https')
+          : require('http');
+        client.get(uri, (resp) => {
+          resp.setEncoding('base64');
+          let base64 = '';
+          resp.on('data', (data) => base64 += data);
+          resp.on('end', () => {
+            resolve({
+              base64,
+              contentType: resp.headers['content-type'],
+            });
+          });
+        }).on('error', reject);
+      });
+    } else {
+      return Promise.reject('Cannot make a request: No definition of XMLHttpRequest was found.');
     }
-    return this.download(source.uri).then((result) => {
-      const newSource = {
-        format: 'base64',
-        base64: result.base64,
-        type: result.contentType,
+  },
+
+  downloadAjax: function(uri) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XHR();
+      xhr.open('GET', uri, true);
+      xhr.responseType = 'arraybuffer';
+      xhr.onerror = function(e) { reject(e); };
+      xhr.onreadystatechange = function() {
+        if (xhr.readyState !== 4) {
+          return;
+        }
+        const bytes = new Uint8Array(this.response);
+        resolve({
+          base64: ParseFile.encodeBase64(bytes),
+          contentType: xhr.getResponseHeader('content-type'),
+        });
       };
-      return this.saveBase64(name, newSource, options);
+      xhr.send();
     });
   },
 
-  download: function(uri) {
-    return new Promise((resolve, reject) => {
-      let client = http;
-      if (uri.indexOf('https') === 0) {
-        client = https;
-      }
-      client.get(uri, (resp) => {
-        resp.setEncoding('base64');
-        let base64 = '';
-        resp.on('data', (data) => base64 += data);
-        resp.on('end', () => {
-          resolve({
-            base64,
-            contentType: resp.headers['content-type'],
-          });
-        });
-      }).on('error', reject);
-    });
+  _setXHR(xhr: any) {
+    XHR = xhr;
   }
 };
 
