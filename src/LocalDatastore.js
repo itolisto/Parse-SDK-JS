@@ -79,7 +79,11 @@ const LocalDatastore = {
     for (const parent of objects) {
       const children = this._getChildren(parent);
       const parentKey = this.getKeyForObject(parent);
-      children[parentKey] = parent._toFullJSON();
+      const json = parent._toFullJSON();
+      if (parent._localId) {
+        json._localId = parent._localId;
+      }
+      children[parentKey] = json;
       for (const objectKey in children) {
         objectKeys.push(objectKey);
         toPinPromises.push(this.pinWithName(objectKey, [children[objectKey]]));
@@ -137,7 +141,7 @@ const LocalDatastore = {
     const encountered = {};
     const json = object._toFullJSON();
     for (const key in json) {
-      if (json[key].__type && json[key].__type === 'Object') {
+      if (json[key] && json[key].__type && json[key].__type === 'Object') {
         this._traverse(json[key], encountered);
       }
     }
@@ -337,7 +341,16 @@ const LocalDatastore = {
     const pointersHash = {};
     for (const key of keys) {
       // Ignore the OBJECT_PREFIX
-      const [ , , className, objectId] = key.split('_');
+      let [ , , className, objectId] = key.split('_');
+
+      // User key is split into [ 'Parse', 'LDS', '', 'User', 'objectId' ]
+      if (key.split('_').length === 5 && key.split('_')[3] === 'User') {
+        className = '_User';
+        objectId = key.split('_')[4];
+      }
+      if (objectId.startsWith('local')) {
+        continue;
+      }
       if (!(className in pointersHash)) {
         pointersHash[className] = new Set();
       }
