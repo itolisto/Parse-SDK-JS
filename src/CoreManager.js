@@ -121,7 +121,8 @@ type UserController = {
   logIn: (user: ParseUser, options: RequestOptions) => Promise;
   become: (options: RequestOptions) => Promise;
   hydrate: (userJSON: AttributeMap) => Promise;
-  logOut: () => Promise;
+  logOut: (options: RequestOptions) => Promise;
+  me: (options: RequestOptions) => Promise;
   requestPasswordReset: (email: string, options: RequestOptions) => Promise;
   updateUserOnDisk: (user: ParseUser) => Promise;
   upgradeToRevocableSession: (user: ParseUser, options: RequestOptions) => Promise;
@@ -135,7 +136,14 @@ type HooksController = {
   update: (hook: mixed) => Promise;
   send: (method: string, path: string, body?: mixed) => Promise;
 };
-
+type WebSocketController = {
+  onopen: () => void;
+  onmessage: (message: any) => void;
+  onclose: () => void;
+  onerror: (error: any) => void;
+  send: (data: any) => void;
+  close: () => void;
+}
 type Config = {
   AnalyticsController?: AnalyticsController,
   CloudController?: CloudController,
@@ -153,6 +161,7 @@ type Config = {
   LocalDatastoreController?: LocalDatastoreController,
   UserController?: UserController,
   HooksController?: HooksController,
+  WebSocketController?: WebSocketController,
 };
 
 const config: Config & { [key: string]: mixed } = {
@@ -369,6 +378,14 @@ module.exports = {
     return config['AsyncStorage'];
   },
 
+  setWebSocketController(controller: WebSocketController) {
+    config['WebSocketController'] = controller;
+  },
+
+  getWebSocketController(): WebSocketController {
+    return config['WebSocketController'];
+  },
+
   setUserController(controller: UserController) {
     requireMethods('UserController', [
       'setCurrentUser',
@@ -378,6 +395,7 @@ module.exports = {
       'logIn',
       'become',
       'logOut',
+      'me',
       'requestPasswordReset',
       'upgradeToRevocableSession',
       'linkWith',

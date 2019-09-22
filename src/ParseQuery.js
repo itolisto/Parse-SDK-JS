@@ -30,12 +30,16 @@ export type WhereClause = {
 export type QueryJSON = {
   where: WhereClause;
   include?: string;
+  excludeKeys?: string;
   keys?: string;
   limit?: number;
   skip?: number;
   order?: string;
   className?: string;
   count?: number;
+  readPreference?: string;
+  includeReadPreference?: string;
+  subqueryReadPreference?: string;
 };
 
 /**
@@ -216,10 +220,15 @@ class ParseQuery {
   className: string;
   _where: any;
   _include: Array<string>;
+  _exclude: Array<string>;
   _select: Array<string>;
   _limit: number;
   _skip: number;
+  _count: boolean;
   _order: Array<string>;
+  _readPreference: string;
+  _includeReadPreference: string;
+  _subqueryReadPreference: string;
   _queriesLocalDatastore: boolean;
   _localDatastorePinName: any;
   _extraOptions: { [key: string]: mixed };
@@ -251,8 +260,13 @@ class ParseQuery {
 
     this._where = {};
     this._include = [];
+    this._exclude = [];
+    this._count = false;
     this._limit = -1; // negative limit is not sent in the server request
     this._skip = 0;
+    this._readPreference = null;
+    this._includeReadPreference = null;
+    this._subqueryReadPreference = null;
     this._queriesLocalDatastore = false;
     this._localDatastorePinName = null;
     this._extraOptions = {};
@@ -352,6 +366,12 @@ class ParseQuery {
         return handleOfflineSort(a, b, sorts);
       });
     }
+
+    let count // count total before applying limit/skip
+    if(params.count){
+      count = results.length; // total count from response
+    }
+
     if (params.skip) {
       if (params.skip >= results.length) {
         results = [];
@@ -363,7 +383,13 @@ class ParseQuery {
     if (params.limit !== 0 && params.limit < results.length) {
       limit = params.limit;
     }
+
     results = results.splice(0, limit);
+
+    if(typeof count === 'number'){
+      return {results, count};
+    }
+
     return results;
   }
 
@@ -379,8 +405,14 @@ class ParseQuery {
     if (this._include.length) {
       params.include = this._include.join(',');
     }
+    if (this._exclude.length) {
+      params.excludeKeys = this._exclude.join(',');
+    }
     if (this._select) {
       params.keys = this._select.join(',');
+    }
+    if (this._count) {
+      params.count = 1;
     }
     if (this._limit >= 0) {
       params.limit = this._limit;
@@ -390,6 +422,15 @@ class ParseQuery {
     }
     if (this._order) {
       params.order = this._order.join(',');
+    }
+    if (this._readPreference) {
+      params.readPreference = this._readPreference;
+    }
+    if (this._includeReadPreference) {
+      params.includeReadPreference = this._includeReadPreference;
+    }
+    if (this._subqueryReadPreference) {
+      params.subqueryReadPreference = this._subqueryReadPreference;
     }
     for (const key in this._extraOptions) {
       params[key] = this._extraOptions[key];
@@ -432,6 +473,14 @@ class ParseQuery {
       this._select = json.keys.split(",");
     }
 
+    if (json.excludeKeys) {
+      this._exclude = json.excludeKeys.split(",");
+    }
+
+    if (json.count) {
+      this._count = json.count === 1;
+    }
+
     if (json.limit) {
       this._limit  = json.limit;
     }
@@ -444,9 +493,21 @@ class ParseQuery {
       this._order = json.order.split(",");
     }
 
+    if (json.readPreference) {
+      this._readPreference = json.readPreference;
+    }
+
+    if (json.includeReadPreference) {
+      this._includeReadPreference = json.includeReadPreference;
+    }
+
+    if (json.subqueryReadPreference) {
+      this._subqueryReadPreference = json.subqueryReadPreference;
+    }
+
     for (const key in json) {
       if (json.hasOwnProperty(key))  {
-        if (["where", "include", "keys", "limit", "skip", "order"].indexOf(key) === -1) {
+        if (["where", "include", "keys", "count", "limit", "skip", "order", "readPreference", "includeReadPreference", "subqueryReadPreference"].indexOf(key) === -1) {
           this._extraOptions[key] = json[key];
         }
       }
@@ -548,7 +609,8 @@ class ParseQuery {
       this.toJSON(),
       findOptions
     ).then((response) => {
-      return response.results.map((data) => {
+
+      const results = response.results.map((data) => {
         // In cases of relations, the server may send back a className
         // on the top level of the payload
         const override = response.className || this.className;
@@ -565,6 +627,14 @@ class ParseQuery {
 
         return ParseObject.fromJSON(data, !select);
       });
+
+      const count = response.count;
+
+      if(typeof count === "number"){
+        return {results, count};
+      } else {
+        return results;
+      }
     });
   }
 
@@ -1429,6 +1499,21 @@ class ParseQuery {
   }
 
   /**
+   * Sets the flag to include with response the total number of objects satisfying this query,
+   * despite limits/skip. Might be useful for pagination.
+   * Note that result of this query will be wrapped as an object with
+   *`results`: holding {ParseObject} array and `count`: integer holding total number
+   * @param {boolean} b false - disable, true - enable.
+   * @return {Parse.Query} Returns the query, so you can chain this call.
+   */
+  withCount(includeCount: boolean = true): ParseQuery {
+    if (typeof includeCount !== 'boolean') {
+      throw new Error('You can only set withCount to a boolean value');
+    }
+    this._count = includeCount;
+    return this;
+  }
+  /**
    * Includes nested Parse.Objects for the provided key.  You can use dot
    * notation to specify which fields in the included object are also fetched.
    *
@@ -1483,6 +1568,40 @@ class ParseQuery {
   }
 
   /**
+   * Restricts the fields of the returned Parse.Objects to all keys except the
+   * provided keys. Exclude takes precedence over select and include.
+   *
+   * Requires Parse Server 3.6.0+
+   *
+   * @param {...String|Array<String>} keys The name(s) of the key(s) to exclude.
+   * @return {Parse.Query} Returns the query, so you can chain this call.
+   */
+  exclude(...keys: Array<string|Array<string>>): ParseQuery {
+    keys.forEach((key) => {
+      if (Array.isArray(key)) {
+        this._exclude = this._exclude.concat(key);
+      } else {
+        this._exclude.push(key);
+      }
+    });
+    return this;
+  }
+
+  /**
+   * Changes the read preference that the backend will use when performing the query to the database.
+   * @param {String} readPreference The read preference for the main query.
+   * @param {String} includeReadPreference The read preference for the queries to include pointers.
+   * @param {String} subqueryReadPreference The read preference for the sub queries.
+   * @return {Parse.Query} Returns the query, so you can chain this call.
+   */
+  readPreference(readPreference: string, includeReadPreference?: string, subqueryReadPreference?: string): ParseQuery {
+    this._readPreference = readPreference;
+    this._includeReadPreference = includeReadPreference;
+    this._subqueryReadPreference = subqueryReadPreference;
+    return this;
+  }
+
+  /**
    * Subscribe this query to get liveQuery updates
    *
    * @param {String} sessionToken (optional) Defaults to the currentUser
@@ -1499,7 +1618,9 @@ class ParseQuery {
       liveQueryClient.open();
     }
     const subscription = liveQueryClient.subscribe(this, sessionToken);
-    return subscription;
+    return subscription.subscribePromise.then(() => {
+      return subscription;
+    });
   }
 
   /**

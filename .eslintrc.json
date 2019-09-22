@@ -6,6 +6,9 @@
         "es6": true
     },
     "parser": "babel-eslint",
+    "globals": { 
+        "wx": true 
+    },
     "plugins": [
         "flowtype"
     ],
@@ -24,6 +27,8 @@
         "space-infix-ops": "error",
         "no-useless-escape": "off",
         "no-var": "error",
-        "no-console": 0
+        "no-console": 0,
+        "no-prototype-builtins": "off",
+        "require-atomic-updates": "off"
     }
 }

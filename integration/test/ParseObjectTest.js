@@ -80,6 +80,15 @@ describe('Parse Object', () => {
     });
   });
 
+  it('can check if object exists', async () => {
+    const object = new TestObject();
+    assert.equal(await object.exists(), false);
+    await object.save();
+    assert.equal(await object.exists(), true);
+    await object.destroy();
+    assert.equal(await object.exists(), false);
+  });
+
   it('can find objects', (done) => {
     const object = new TestObject({ foo: 'bar' });
     object.save().then(() => {
@@ -934,6 +943,44 @@ describe('Parse Object', () => {
     });
   });
 
+  it('can skip cascade saving as per request', async(done) => {
+    const Parent = Parse.Object.extend('Parent');
+    const Child = Parse.Object.extend('Child');
+
+    const parent = new Parent();
+    const child1 = new Child();
+    const child2 = new Child();
+    const child3 = new Child();
+
+    child1.set('name', 'rob');
+    child2.set('name', 'sansa');
+    child3.set('name', 'john');
+    parent.set('children', [child1, child2]);
+    parent.set('bastard', child3);
+
+    expect(parent.save).toThrow();
+    let results = await new Parse.Query(Child).find();
+    assert.equal(results.length, 0);
+
+    await parent.save(null, { cascadeSave: true });
+    results = await new Parse.Query(Child).find();
+    assert.equal(results.length, 3);
+
+    parent.set('dead', true);
+    child1.set('dead', true);
+    await parent.save(null);
+    const rob = await new Parse.Query(Child).equalTo('name', 'rob').first();
+    expect(rob.get('dead')).toBe(true);
+
+    parent.set('lastname', 'stark');
+    child3.set('lastname', 'stark');
+    await parent.save(null, { cascadeSave: false });
+    const john = await new Parse.Query(Child).doesNotExist('lastname').first();
+    expect(john.get('lastname')).toBeUndefined();
+
+    done();
+  });
+
   it('can do two saves at the same time', (done) => {
     const object = new TestObject();
     let firstSave = true;
@@ -1401,6 +1448,37 @@ describe('Parse Object', () => {
     }).catch(done.fail);
   });
 
+  it('can fetchAllIfNeededWithInclude', async () => {
+    const pointer = new TestObject({ foo: 'bar' });
+    const item1 = new Item({ x: 1});
+    const item2 = new Item({ x: 2, pointer });
+    const items = [item1, item2];
+
+    await Parse.Object.saveAll(items);
+
+    const container = new Container();
+    container.set('items', items);
+    await container.save();
+
+    const query = new Parse.Query(Container);
+    const containerAgain = await query.get(container.id);
+
+    // Fetch objects with no data
+    const itemsAgain = containerAgain.get('items');
+    const item1Again = itemsAgain[0].set('x', 100);
+    const item2Again = itemsAgain[1];
+
+    // Override item1 in database, this shouldn't fetch
+    await item1Again.save();
+
+    const fetchedItems = await Parse.Object.fetchAllIfNeededWithInclude([item1, item2Again], ['pointer']);
+    assert.equal(fetchedItems.length, items.length);
+    assert.equal(fetchedItems[0].get('x'), 1);
+    assert.equal(fetchedItems[1].get('x'), 2); // item2Again should update
+    assert.equal(fetchedItems[1].get('pointer').id, pointer.id);
+    assert.equal(fetchedItems[1].get('pointer').get('foo'), 'bar');
+  });
+
   it('can fetchAllIfNeeded', (done) => {
     const numItems = 11;
     const container = new Container();
@@ -1662,5 +1740,38 @@ describe('Parse Object', () => {
     assert.equal(relations.length, 1);
 
     done();
+  });
+
+  it('isDataAvailable', async () => {
+    const child = new TestObject({ foo: 'bar' });
+    assert.equal(child.isDataAvailable(), false);
+
+    const parent = new TestObject({ child });
+    await parent.save();
+
+    assert.equal(child.isDataAvailable(), true);
+    assert.equal(parent.isDataAvailable(), true);
+
+    const query = new Parse.Query(TestObject);
+    const fetched = await query.get(parent.id);
+    const unfetched = fetched.get('child');
+
+    assert.equal(fetched.isDataAvailable(), true);
+    assert.equal(unfetched.isDataAvailable(), false);
+  });
+
+  it('isDataAvailable user', async () => {
+    let user = new Parse.User();
+    user.set('username', 'plain');
+    user.set('password', 'plain');
+    await user.signUp();
+    assert.equal(user.isDataAvailable(), true);
+
+    user = await Parse.User.logIn('plain', 'plain');
+    assert.equal(user.isDataAvailable(), true);
+
+    const query = new Parse.Query(Parse.User);
+    const fetched = await query.get(user.id);
+    assert.equal(fetched.isDataAvailable(), true);
   });
 });

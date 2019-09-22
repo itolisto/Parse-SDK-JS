@@ -54,6 +54,10 @@ type SaveParams = {
   body: AttributeMap;
 };
 
+type SaveOptions = FullOptions & {
+  cascadeSave?: boolean
+}
+
 const DEFAULT_BATCH_SIZE = 20;
 
 // Mapping of class names to constructors, so we can populate objects from the
@@ -525,6 +529,15 @@ class ParseObject {
   }
 
   /**
+   * Returns true if the object has been fetched.
+   * @return {Boolean}
+   */
+  isDataAvailable(): boolean {
+    const serverData = this._getServerData();
+    return !!Object.keys(serverData).length;
+  }
+
+  /**
    * Gets a Pointer referencing this Object.
    * @return {Pointer}
    */
@@ -624,7 +637,7 @@ class ParseObject {
    * @param {} value The value to give it.
    * @param {Object} options A set of options for the set.
    *     The only supported option is <code>error</code>.
-   * @return {Boolean} true if the set succeeded.
+   * @return {(ParseObject|Boolean)} true if the set succeeded.
    */
   set(key: mixed, value: mixed, options?: mixed): ParseObject | boolean {
     let changes = {};
@@ -729,6 +742,7 @@ class ParseObject {
    * Remove an attribute from the model. This is a noop if the attribute doesn't
    * exist.
    * @param {String} attr The string name of an attribute.
+   * @return {(ParseObject|Boolean)}
    */
   unset(attr: string, options?: { [opt: string]: mixed }): ParseObject | boolean {
     options = options || {};
@@ -742,6 +756,7 @@ class ParseObject {
    *
    * @param attr {String} The key.
    * @param amount {Number} The amount to increment by (optional).
+   * @return {(ParseObject|Boolean)}
    */
   increment(attr: string, amount?: number): ParseObject | boolean {
     if (typeof amount === 'undefined') {
@@ -769,6 +784,7 @@ class ParseObject {
    * key.
    * @param attr {String} The key.
    * @param items {Object[]} The items to add.
+   * @return {(ParseObject|Boolean)}
    */
   addAll(attr: string, items: Array<mixed>): ParseObject | boolean {
     return this.set(attr, new AddOp(items));
@@ -781,6 +797,7 @@ class ParseObject {
    *
    * @param attr {String} The key.
    * @param item {} The object to add.
+   * @return {(ParseObject|Boolean)}
    */
   addUnique(attr: string, item: mixed): ParseObject | boolean {
     return this.set(attr, new AddUniqueOp([item]));
@@ -793,6 +810,7 @@ class ParseObject {
    *
    * @param attr {String} The key.
    * @param items {Object[]} The objects to add.
+   * @return {(ParseObject|Boolean)}
    */
   addAllUnique(attr: string, items: Array<mixed>): ParseObject | boolean {
     return this.set(attr, new AddUniqueOp(items));
@@ -804,6 +822,7 @@ class ParseObject {
    *
    * @param attr {String} The key.
    * @param item {} The object to remove.
+   * @return {(ParseObject|Boolean)}
    */
   remove(attr: string, item: mixed): ParseObject | boolean {
     return this.set(attr, new RemoveOp([item]));
@@ -815,6 +834,7 @@ class ParseObject {
    *
    * @param attr {String} The key.
    * @param items {Object[]} The object to remove.
+   * @return {(ParseObject|Boolean)}
    */
   removeAll(attr: string, items: Array<mixed>): ParseObject | boolean {
     return this.set(attr, new RemoveOp(items));
@@ -915,6 +935,34 @@ class ParseObject {
   }
 
   /**
+   * Returns true if this object exists on the Server
+   *
+   * @param {Object} options
+   * Valid options are:<ul>
+   *   <li>useMasterKey: In Cloud Code and Node only, causes the Master Key to
+   *     be used for this request.
+   *   <li>sessionToken: A valid session token, used for making a request on
+   *       behalf of a specific user.
+   * </ul>
+   * @return {Promise<boolean>} A boolean promise that is fulfilled if object exists.
+   */
+  async exists(options?: RequestOptions): Promise<boolean> {
+    if (!this.id) {
+      return false;
+    }
+    try {
+      const query = new ParseQuery(this.className)
+      await query.get(this.id, options);
+      return true;
+    } catch (e) {
+      if (e.code === ParseError.OBJECT_NOT_FOUND) {
+        return false;
+      }
+      throw e;
+    }
+  }
+
+  /**
    * Checks if the model is currently in a valid state.
    * @return {Boolean}
    */
@@ -964,7 +1012,7 @@ class ParseObject {
    * Sets the ACL to be used for this object.
    * @param {Parse.ACL} acl An instance of Parse.ACL.
    * @param {Object} options
-   * @return {Boolean} Whether the set passed validation.
+   * @return {(ParseObject|Boolean)} Whether the set passed validation.
    * @see Parse.Object#set
    */
   setACL(acl: ParseACL, options?: mixed): ParseObject | boolean {
@@ -1117,6 +1165,7 @@ class ParseObject {
    *     be used for this request.
    *       <li>sessionToken: A valid session token, used for making a request on
    *       behalf of a specific user.
+   *       <li>cascadeSave: If `false`, nested objects will not be saved (default is `true`).
    *     </ul>
    *   </li>
    * </ul>
@@ -1129,6 +1178,7 @@ class ParseObject {
    *       be used for this request.
    *   <li>sessionToken: A valid session token, used for making a request on
    *       behalf of a specific user.
+   *   <li>cascadeSave: If `false`, nested objects will not be saved (default is `true`).
    * </ul>
    *
    * @return {Promise} A promise that is fulfilled when the save
@@ -1136,8 +1186,8 @@ class ParseObject {
    */
   save(
     arg1: ?string | { [attr: string]: mixed },
-    arg2: FullOptions | mixed,
-    arg3?: FullOptions
+    arg2: SaveOptions | mixed,
+    arg3?: SaveOptions
   ): Promise {
     let attrs;
     let options;
@@ -1186,7 +1236,7 @@ class ParseObject {
       saveOptions.sessionToken = options.sessionToken;
     }
     const controller = CoreManager.getObjectController();
-    const unsaved = unsavedChildren(this);
+    const unsaved = options.cascadeSave !== false ? unsavedChildren(this) : null;
     return controller.save(unsaved, saveOptions).then(() => {
       return controller.save(this, saveOptions);
     });
@@ -1379,18 +1429,7 @@ class ParseObject {
       queryOptions.sessionToken = options.sessionToken;
     }
     if (options.hasOwnProperty('include')) {
-      queryOptions.include = [];
-      if (Array.isArray(options.include)) {
-        options.include.forEach((key) => {
-          if (Array.isArray(key)) {
-            queryOptions.include = queryOptions.include.concat(key);
-          } else {
-            queryOptions.include.push(key);
-          }
-        });
-      } else {
-        queryOptions.include.push(options.include);
-      }
+      queryOptions.include = ParseObject.handleIncludeOptions(options);
     }
     return CoreManager.getObjectController().fetch(
       list,
@@ -1437,6 +1476,41 @@ class ParseObject {
    * Fetches the given list of Parse.Object if needed.
    * If any error is encountered, stops and calls the error handler.
    *
+   * Includes nested Parse.Objects for the provided key. You can use dot
+   * notation to specify which fields in the included object are also fetched.
+   *
+   * If any error is encountered, stops and calls the error handler.
+   *
+   * <pre>
+   *   Parse.Object.fetchAllIfNeededWithInclude([object1, object2, ...], [pointer1, pointer2, ...])
+   *    .then((list) => {
+   *      // All the objects were fetched.
+   *    }, (error) => {
+   *      // An error occurred while fetching one of the objects.
+   *    });
+   * </pre>
+   *
+   * @param {Array} list A list of <code>Parse.Object</code>.
+   * @param {String|Array<string|Array<string>>} keys The name(s) of the key(s) to include.
+   * @param {Object} options
+   * Valid options are:<ul>
+   *   <li>useMasterKey: In Cloud Code and Node only, causes the Master Key to
+   *     be used for this request.
+   *   <li>sessionToken: A valid session token, used for making a request on
+   *       behalf of a specific user.
+   * </ul>
+   * @static
+   */
+  static fetchAllIfNeededWithInclude(list: Array<ParseObject>, keys: String|Array<string|Array<string>>, options: RequestOptions) {
+    options = options || {};
+    options.include = keys;
+    return ParseObject.fetchAllIfNeeded(list, options);
+  }
+
+  /**
+   * Fetches the given list of Parse.Object if needed.
+   * If any error is encountered, stops and calls the error handler.
+   *
    * <pre>
    *   Parse.Object.fetchAllIfNeeded([object1, ...])
    *    .then((list) => {
@@ -1460,11 +1534,30 @@ class ParseObject {
     if (options.hasOwnProperty('sessionToken')) {
       queryOptions.sessionToken = options.sessionToken;
     }
+    if (options.hasOwnProperty('include')) {
+      queryOptions.include = ParseObject.handleIncludeOptions(options);
+    }
     return CoreManager.getObjectController().fetch(
       list,
       false,
       queryOptions
     );
+  }
+
+  static handleIncludeOptions(options) {
+    let include = [];
+    if (Array.isArray(options.include)) {
+      options.include.forEach((key) => {
+        if (Array.isArray(key)) {
+          include = include.concat(key);
+        } else {
+          include.push(key);
+        }
+      });
+    } else {
+      include.push(options.include);
+    }
+    return include;
   }
 
   /**
@@ -1975,7 +2068,7 @@ const DefaultController = {
             'All objects must have an ID'
           );
         }
-        if (forceFetch || Object.keys(el._getServerData()).length === 0) {
+        if (forceFetch || !el.isDataAvailable()) {
           ids.push(el.id);
           objs.push(el);
         }
@@ -2129,6 +2222,9 @@ const DefaultController = {
 
     const RESTController = CoreManager.getRESTController();
     const stateController = CoreManager.getObjectStateController();
+
+    options = options || {};
+    options.returnStatus = options.returnStatus || true;
     if (Array.isArray(target)) {
       if (target.length < 1) {
         return Promise.resolve([]);
@@ -2194,9 +2290,11 @@ const DefaultController = {
             batchReady.push(ready);
             const task = function() {
               ready.resolve();
-              return batchReturned.then((responses, status) => {
+              return batchReturned.then((responses) => {
                 if (responses[index].hasOwnProperty('success')) {
                   const objectId = responses[index].success.objectId;
+                  const status = responses[index]._status;
+                  delete responses[index]._status;
                   mapIdForPin[objectId] = obj._localId;
                   obj._handleSaveResponse(responses[index].success, status);
                 } else {
@@ -2223,9 +2321,7 @@ const DefaultController = {
                 return params;
               })
             }, options);
-          }).then((response, status) => {
-            batchReturned.resolve(response, status);
-          }, (error) => {
+          }).then(batchReturned.resolve, (error) => {
             batchReturned.reject(new ParseError(ParseError.INCORRECT_TYPE, error.message));
           });
 
@@ -2253,7 +2349,9 @@ const DefaultController = {
           params.path,
           params.body,
           options
-        ).then((response, status) => {
+        ).then((response) => {
+          const status = response._status;
+          delete response._status;
           targetCopy._handleSaveResponse(response, status);
         }, (error) => {
           targetCopy._handleSaveError();

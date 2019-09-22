@@ -77,7 +77,8 @@ class ParseUser extends ParseObject {
    * Unlike in the Android/iOS SDKs, logInWith is unnecessary, since you can
    * call linkWith on the user (even if it doesn't exist yet on the server).
    */
-  _linkWith(provider: any, options: { authData?: AuthData }, saveOpts?: FullOptions): Promise<ParseUser> {
+  _linkWith(provider: any, options: { authData?: AuthData }, saveOpts?: FullOptions = {}): Promise<ParseUser> {
+    saveOpts.sessionToken = saveOpts.sessionToken || this.getSessionToken() || '';
     let authType;
     if (typeof provider === 'string') {
       authType = provider;
@@ -648,7 +649,27 @@ class ParseUser extends ParseObject {
     }
 
     const controller = CoreManager.getUserController();
-    return controller.become(becomeOptions);
+    const user = new this();
+    return controller.become(user, becomeOptions);
+  }
+
+  /**
+   * Retrieves a user with a session token.
+   *
+   * @param {String} sessionToken The sessionToken to get user with.
+   * @param {Object} options
+   * @static
+   * @return {Promise} A promise that is fulfilled with the user is fetched.
+   */
+  static me(sessionToken: string, options?: RequestOptions = {}) {
+    const controller = CoreManager.getUserController();
+    const meOptions: RequestOptions = {
+      sessionToken: sessionToken
+    };
+    if (options.useMasterKey) {
+      meOptions.useMasterKey = options.useMasterKey;
+    }
+    return controller.me(meOptions);
   }
 
   /**
@@ -666,28 +687,23 @@ class ParseUser extends ParseObject {
     return controller.hydrate(userJSON);
   }
 
-  static logInWith(provider: any, options?: RequestOptions) {
-    return ParseUser._logInWith(provider, options);
+  static logInWith(provider: any, options: { authData?: AuthData }, saveOpts?: FullOptions) {
+    return ParseUser._logInWith(provider, options, saveOpts);
   }
 
   /**
    * Logs out the currently logged in user session. This will remove the
    * session from disk, log out of linked services, and future calls to
    * <code>current</code> will return <code>null</code>.
-
+   *
+   * @param {Object} options
    * @static
    * @return {Promise} A promise that is resolved when the session is
    *   destroyed on the server.
    */
-  static logOut() {
-    if (!canUseCurrentUser) {
-      throw new Error(
-        'There is no current user on a node.js server environment.'
-      );
-    }
-
+  static logOut(options: RequestOptions = {}) {
     const controller = CoreManager.getUserController();
-    return controller.logOut();
+    return controller.logOut(options);
   }
 
   /**
@@ -790,9 +806,9 @@ class ParseUser extends ParseObject {
     });
   }
 
-  static _logInWith(provider: any, options?: RequestOptions) {
+  static _logInWith(provider: any, options: { authData?: AuthData }, saveOpts?: FullOptions) {
     const user = new ParseUser();
-    return user._linkWith(provider, options);
+    return user._linkWith(provider, options, saveOpts);
   }
 
   static _clearCache() {
@@ -975,8 +991,7 @@ const DefaultController = {
     });
   },
 
-  become(options: RequestOptions): Promise<ParseUser> {
-    const user = new ParseUser();
+  become(user: ParseUser, options: RequestOptions): Promise<ParseUser> {
     const RESTController = CoreManager.getRESTController();
     return RESTController.request(
       'GET', 'users/me', {}, options
@@ -998,11 +1013,28 @@ const DefaultController = {
     }
   },
 
-  logOut(): Promise<ParseUser> {
+  me(options: RequestOptions): Promise<ParseUser> {
+    const RESTController = CoreManager.getRESTController();
+    return RESTController.request(
+      'GET', 'users/me', {}, options
+    ).then((response) => {
+      const user = new ParseUser();
+      user._finishFetch(response);
+      user._setExisted(true);
+      return user;
+    });
+  },
+
+  logOut(options: RequestOptions): Promise<ParseUser> {
+    const RESTController = CoreManager.getRESTController();
+    if (options.sessionToken) {
+      return RESTController.request(
+        'POST', 'logout', {}, options
+      );
+    }
     return DefaultController.currentUserAsync().then((currentUser) => {
       const path = Storage.generatePath(CURRENT_USER_KEY);
       let promise = Storage.removeItemAsync(path);
-      const RESTController = CoreManager.getRESTController();
       if (currentUser !== null) {
         const isAnonymous = AnonymousUtils.isLinked(currentUser);
         const currentSession = currentUser.getSessionToken();

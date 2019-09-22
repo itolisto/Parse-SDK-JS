@@ -23,6 +23,7 @@ describe('Parse Query', () => {
       .then(() => { done() }, () => { done() });
   });
 
+
   it('can do basic queries', (done) => {
     const baz = new TestObject({ foo: 'baz' });
     const qux = new TestObject({ foo: 'qux' });
@@ -49,6 +50,119 @@ describe('Parse Query', () => {
       assert.equal(['baz', 'qux'].includes(results[0].get('foo')), true);
       done();
     }).catch(done.fail);
+  });
+
+  it('can do query with count', async () => {
+    const items = [];
+    for (let i = 0; i < 4; i++) {
+      items.push(new TestObject({ countMe: true }));
+    }
+    await Parse.Object.saveAll(items);
+
+    const query = new Parse.Query(TestObject);
+    query.withCount(true);
+    const {results,count} = await query.find();
+
+    assert(typeof count === 'number');
+    assert.equal(results.length, 4);
+    assert.equal(count, 4);
+    for (let i = 0; i < 4; i++) {
+      assert.equal(results[i].className,'TestObject');
+    }
+  });
+
+  it('can do query withCount set to false', async () => {
+    const items = [];
+    for (let i = 0; i < 4; i++) {
+      items.push(new TestObject({ countMe: true }));
+    }
+    await Parse.Object.saveAll(items);
+
+    const query = new Parse.Query(TestObject);
+    query.withCount(false);
+    const results = await query.find();
+
+    assert.equal(results.length, 4);
+    for (let i = 0; i < 4; i++) {
+      assert.equal(results[i].className,'TestObject');
+    }
+  });
+
+  it('can do query with count on empty collection', async () => {
+    const query = new Parse.Query(TestObject);
+    query.withCount(true);
+    const {results,count} = await query.find();
+
+    assert(typeof count == 'number');
+    assert.equal(results.length, 0);
+    assert.equal(count, 0);
+  });
+
+  it('can do query with count and limit', async () => {
+    const items = [];
+    for (let i = 0; i < 4; i++) {
+      items.push(new TestObject({ countMe: 2}));
+    }
+    await Parse.Object.saveAll(items);
+    const query = new Parse.Query(TestObject);
+    query.withCount(true);
+    query.limit(2);
+
+    const {results,count} = await query.find();
+
+    assert(typeof count == 'number');
+    assert.equal(results.length, 2);
+    assert.equal(count, 4);
+  });
+
+  it('can do query withCount and skip', async () => {
+    const items = [];
+    for (let i = 0; i < 4; i++) {
+      items.push(new TestObject({ countMe: 2}));
+    }
+    await Parse.Object.saveAll(items);
+    const query = new Parse.Query(TestObject);
+    query.withCount(true);
+    query.skip(3);
+
+    const {results,count} = await query.find();
+
+    assert(typeof count == 'number');
+    assert.equal(results.length, 1);
+    assert.equal(count, 4);
+  });
+
+  it('can do query when withCount set without arguments', async () => {
+    const items = [];
+    for (let i = 0; i < 4; i++) {
+      items.push(new TestObject({ countMe: 2}));
+    }
+    await Parse.Object.saveAll(items);
+    const query = new Parse.Query(TestObject);
+    query.withCount();
+
+    const {results,count} = await query.find();
+
+    assert(typeof count == 'number');
+    assert.equal(results.length, 4);
+    assert.equal(count, 4);
+  });
+
+  it('can do query when withCount undefined', async () => {
+    const items = [];
+    for (let i = 0; i < 4; i++) {
+      items.push(new TestObject({ countMe: 2}));
+    }
+    await Parse.Object.saveAll(items);
+    const query = new Parse.Query(TestObject);
+    let foo;
+    query.withCount(foo);
+
+    const {results,count} = await query.find();
+
+    assert(typeof count == 'number');
+    assert.equal(results.length, 4);
+    assert.equal(count, 4);
   });
 
   it('can do containedIn queries with arrays', (done) => {
@@ -1187,6 +1301,38 @@ describe('Parse Query', () => {
       assert(!childAgain.dirty());
       done();
     });
+  });
+
+  it('can exclude keys', async () => {
+    const object = new TestObject({
+      hello: 'world',
+      foo: 'bar',
+      slice: 'pizza',
+    });
+    await object.save();
+
+    const query = new Parse.Query(TestObject);
+    query.exclude('foo');
+    const result = await query.get(object.id);
+    assert.equal(result.get('foo'), undefined);
+    assert.equal(result.get('hello'), 'world');
+    assert.equal(result.get('slice'), 'pizza');
+  });
+
+  it('can exclude multiple keys', async () => {
+    const object = new TestObject({
+      hello: 'world',
+      foo: 'bar',
+      slice: 'pizza',
+    });
+    await object.save();
+
+    const query = new Parse.Query(TestObject);
+    query.exclude(['foo', 'hello']);
+    const result = await query.get(object.id);
+    assert.equal(result.get('foo'), undefined);
+    assert.equal(result.get('hello'), undefined);
+    assert.equal(result.get('slice'), 'pizza');
   });
 
   it('uses subclasses when creating objects', (done) => {

@@ -101,6 +101,13 @@ mockQuery.prototype.include = function(keys) {
 mockQuery.prototype.find = function() {
   return Promise.resolve(this.results);
 };
+mockQuery.prototype.get = function(id) {
+  const object = ParseObject.fromJSON({
+    className: this.className,
+    objectId: id
+  });
+  return Promise.resolve(object);
+};
 jest.setMock('../ParseQuery', mockQuery);
 
 import { DEFAULT_PIN, PIN_PREFIX } from '../LocalDatastoreUtils';
@@ -916,6 +923,18 @@ describe('ParseObject', () => {
     expect(p.op('age')).toBe(undefined);
   });
 
+  it('isDataAvailable', () => {
+    const p = new ParseObject('Person');
+    p.id = 'isdataavailable';
+    p.set('age', 24);
+    expect(p.isDataAvailable()).toBe(false);
+    const updated = new Date();
+    p._handleSaveResponse({
+      updatedAt: { __type: 'Date', iso: updated.toISOString() }
+    });
+    expect(p.isDataAvailable()).toBe(true);
+  });
+
   it('handles ACL when saved', () => {
     const p = new ParseObject('Person');
 
@@ -1095,6 +1114,13 @@ describe('ParseObject', () => {
     ]);
 
     spy.mockRestore();
+  });
+
+  it('can check if object exists', async () => {
+    const parent = new ParseObject('Person');
+    expect(await parent.exists()).toBe(false);
+    parent.id = '1234'
+    expect(await parent.exists()).toBe(true);
   });
 
   it('can save the object', (done) => {

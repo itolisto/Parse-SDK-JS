@@ -66,6 +66,7 @@ describe('Parse User', () => {
   it('can sign up users via static method', (done) => {
     Parse.User.signUp('asdf', 'zxcv').then((user) => {
       assert(user.getSessionToken());
+      expect(user.existed()).toBe(false);
       done();
     });
   });
@@ -76,6 +77,7 @@ describe('Parse User', () => {
     user.setUsername('zxcv');
     user.signUp().then((user) => {
       assert(user.getSessionToken());
+      expect(user.existed()).toBe(false);
       done();
     });
   });
@@ -101,6 +103,7 @@ describe('Parse User', () => {
       return Parse.User.logIn('asdf', 'zxcv');
     }).then((user) => {
       assert.equal(user.get('username'), 'asdf');
+      expect(user.existed()).toBe(true);
       done();
     });
   });
@@ -548,6 +551,71 @@ describe('Parse User', () => {
     }
   });
 
+  it('anonymous user logIn does not use currentUser sessionToken', async () => {
+    Parse.User.enableUnsafeCurrentUser();
+
+    const user1 = await Parse.User.signUp('anon-not', '1234');
+    const user2 = await Parse.AnonymousUtils.logIn();
+    expect(user1.getSessionToken()).toBeDefined();
+    expect(user2.getSessionToken()).toBeDefined();
+    expect(user1.getSessionToken()).not.toBe(user2.getSessionToken());
+  });
+
+  it('anonymous user link currentUser', async () => {
+    Parse.User.enableUnsafeCurrentUser();
+
+    const user1 = await Parse.User.signUp('anon-not', '1234');
+    const user2 = await Parse.AnonymousUtils.link(user1);
+    expect(user1.getSessionToken()).toBeDefined();
+    expect(user2.getSessionToken()).toBeDefined();
+    expect(user1.getSessionToken()).toBe(user2.getSessionToken());
+  });
+
+  it('anonymous user link does not use currentUser sessionToken', async () => {
+    Parse.User.enableUnsafeCurrentUser();
+
+    const user1 = await Parse.User.signUp('anon-not', '1234');
+    const user2 = new Parse.User();
+    await Parse.AnonymousUtils.link(user2);
+    expect(user1.getSessionToken()).toBeDefined();
+    expect(user2.getSessionToken()).toBeDefined();
+    expect(user1.getSessionToken()).not.toBe(user2.getSessionToken());
+  });
+
+  it('facebook logIn does not use currentUser sessionToken', async () => {
+    Parse.User.enableUnsafeCurrentUser();
+    Parse.FacebookUtils.init();
+
+    const user1 = await Parse.User.signUp('facebook-not', '1234');
+    const user2 = await Parse.FacebookUtils.logIn();
+    expect(user1.getSessionToken()).toBeDefined();
+    expect(user2.getSessionToken()).toBeDefined();
+    expect(user1.getSessionToken()).not.toBe(user2.getSessionToken());
+  });
+
+  it('facebook link currentUser', async () => {
+    Parse.User.enableUnsafeCurrentUser();
+    Parse.FacebookUtils.init();
+
+    const user1 = await Parse.User.signUp('facebook-not', '1234');
+    const user2 = await Parse.FacebookUtils.link(user1);
+    expect(user1.getSessionToken()).toBeDefined();
+    expect(user2.getSessionToken()).toBeDefined();
+    expect(user1.getSessionToken()).toBe(user2.getSessionToken());
+  });
+
+  it('facebook link does not use currentUser sessionToken', async () => {
+    Parse.User.enableUnsafeCurrentUser();
+    Parse.FacebookUtils.init();
+
+    const user1 = await Parse.User.signUp('facebook-not', '1234');
+    const user2 = new Parse.User();
+    await Parse.FacebookUtils.link(user2);
+    expect(user1.getSessionToken()).toBeDefined();
+    expect(user2.getSessionToken()).toBeDefined();
+    expect(user1.getSessionToken()).not.toBe(user2.getSessionToken());
+  });
+
   it('can signUp user with subclass', async () => {
     Parse.User.enableUnsafeCurrentUser();
 
@@ -586,6 +654,17 @@ describe('Parse User', () => {
     expect(user.doSomething()).toBe(5);
 
     user = await CustomUser.logIn('username', 'password');
+    expect(user instanceof CustomUser).toBe(true);
+    expect(user.doSomething()).toBe(5);
+  });
+
+  it('can become user with subclass static', async () => {
+    Parse.User.enableUnsafeCurrentUser();
+
+    let user = await CustomUser.signUp('username', 'password');
+    const token = user.getSessionToken();
+
+    user = await CustomUser.become(token)
     expect(user instanceof CustomUser).toBe(true);
     expect(user.doSomething()).toBe(5);
   });
@@ -645,15 +724,13 @@ describe('Parse User', () => {
     expect(loggedIn.authenticated()).toBeTruthy();
   });
 
-  it('linking un-authenticated user without master key will throw', async (done) => {
+  it('can linking un-authenticated user without master key', async () => {
     const user = new Parse.User();
     user.setUsername('Alice');
     user.setPassword('sekrit');
     await user.save(null, { useMasterKey: true });
-    user._linkWith(provider.getAuthType(), provider.getAuthData())
-      .then(() => done.fail('should fail'))
-      .catch(e => expect(e.message).toBe(`Cannot modify user ${user.id}.`))
-      .then(done);
+    await user._linkWith(provider.getAuthType(), provider.getAuthData());
+    expect(user.getSessionToken()).toBeDefined();
   });
 
   it('can link with custom auth', async () => {

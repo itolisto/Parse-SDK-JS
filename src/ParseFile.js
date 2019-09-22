@@ -8,7 +8,7 @@
  *
  * @flow
  */
-/* global XMLHttpRequest, File */
+/* global XMLHttpRequest, Blob */
 import CoreManager from './CoreManager';
 import type { FullOptions } from './RESTController';
 
@@ -16,13 +16,16 @@ let XHR = null;
 if (typeof XMLHttpRequest !== 'undefined') {
   XHR = XMLHttpRequest;
 }
+if (process.env.PARSE_BUILD === 'weapp') {
+  XHR = require('./Xhr.weapp');
+}
 
 type Base64 = { base64: string };
 type Uri = { uri: string };
-type FileData = Array<number> | Base64 | File | Uri;
+type FileData = Array<number> | Base64 | Blob | Uri;
 export type FileSource = {
   format: 'file';
-  file: File;
+  file: Blob;
   type: string
 } | {
   format: 'base64';
@@ -109,7 +112,7 @@ class ParseFile {
           base64: this._data,
           type: specifiedType
         };
-      } else if (typeof File !== 'undefined' && data instanceof File) {
+      } else if (typeof Blob !== 'undefined' && data instanceof Blob) {
         this._source = {
           format: 'file',
           file: data,

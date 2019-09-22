@@ -263,6 +263,7 @@ describe('RESTController', () => {
       logIn() {},
       become() {},
       logOut() {},
+      me() {},
       requestPasswordReset() {},
       upgradeToRevocableSession() {},
       linkWith() {},
@@ -298,6 +299,7 @@ describe('RESTController', () => {
       logIn() {},
       become() {},
       logOut() {},
+      me() {},
       requestPasswordReset() {},
       upgradeToRevocableSession() {},
       linkWith() {},
@@ -360,6 +362,16 @@ describe('RESTController', () => {
       _ClientVersion: 'V',
       _InstallationId: 'iid',
     });
+  });
+
+  it('includes the status code when requested', (done) => {
+    RESTController._setXHR(mockXHR([{ status: 200, response: { success: true }}]));
+    RESTController.request('POST', 'users', {}, { returnStatus: true })
+      .then((response) => {
+        expect(response).toEqual(expect.objectContaining({ success: true }));
+        expect(response._status).toBe(200);
+        done();
+      });
   });
 
   it('throws when attempted to use an unprovided master key', () => {
