@@ -1,7 +1,173 @@
 # Parse-SDK-JS
 
 ### master
-[Full Changelog](https://github.com/parse-community/Parse-SDK-JS/compare/2.12.0...master)
+[Full Changelog](https://github.com/parse-community/Parse-SDK-JS/compare/3.2.0...master)
+
+## 3.2.0
+[Full Changelog](https://github.com/parse-community/Parse-SDK-JS/compare/3.1.0...3.2.0)
+
+**Breaking Changes**
+- Remove deletion of Anonymous User on logout ([#1324](https://github.com/parse-community/Parse-SDK-JS/pull/1324))
+See https://community.parseplatform.org/t/anonymous-user-destroyed-on-logout/1425
+
+**Improvements**
+- Allow multiple classNames for `Parse.Object.registerSubclass` ([#1315](https://github.com/parse-community/Parse-SDK-JS/pull/1315))
+```
+const classNames = ['ClassOne', 'ClassTwo', 'ClassThree'];
+for (const className of classNames) {
+  Parse.Object.registerSubclass(className, CustomClass);
+}
+```
+
+**Fixes**
+- Fixes build for WeChat WeApp, to reduce package size, see [issue/#1331](https://github.com/parse-community/Parse-SDK-JS/issues/1331)
+
+## 3.1.0
+[Full Changelog](https://github.com/parse-community/Parse-SDK-JS/compare/3.0.0...3.1.0)
+
+**Breaking Changes**
+`Parse.Push.send` will now return the pushStatusId instead of `{ result: true }`
+
+**Features**
+- Add Server Health Check `Parse.getServerHealth()` ([#1307](https://github.com/parse-community/Parse-SDK-JS/pull/1307))
+- Allow saving with custom objectId `Parse.allowCustomObjectId = true` ([#1309](https://github.com/parse-community/Parse-SDK-JS/pull/1309))
+- `Parse.Push.send` now returns pushStatusId ([#1302](https://github.com/parse-community/Parse-SDK-JS/pull/1302))
+- Add `Parse.Push.getPushStatus` ([#1302](https://github.com/parse-community/Parse-SDK-JS/pull/1302))
+
+**Improvements**
+- Add modifiers to `query.startsWith` ([#1306](https://github.com/parse-community/Parse-SDK-JS/pull/1306))
+- Add modifiers to `query.endsWith` ([#1306](https://github.com/parse-community/Parse-SDK-JS/pull/1306))
+
+**Fixes**
+- EventuallyQueue now polls against `/health` endpoint, caused 403 forbidden side effect ([#1305](https://github.com/parse-community/Parse-SDK-JS/pull/1305))
+- Allow nested increment on undefined fields ([#1303](https://github.com/parse-community/Parse-SDK-JS/pull/1303))
+- Handle increment on nested fields any level deep ([#1301](https://github.com/parse-community/Parse-SDK-JS/pull/1301))
+
+## 3.0.0
+[Full Changelog](https://github.com/parse-community/Parse-SDK-JS/compare/2.19.0...3.0.0)
+
+**Breaking Changes**
+For security purposes, logIn will default to `POST` instead of `GET` method. ([#1284](https://github.com/parse-community/Parse-SDK-JS/pull/1284))
+
+If you need to use `GET` set the `usePost` option to false.
+
+`Parse.User.logIn('username', 'password', { usePost: false })`
+
+**Features**
+- Add EventuallyQueue API, object.saveEventually, object.destroyEventually ([#1291](https://github.com/parse-community/Parse-SDK-JS/pull/1291))
+- Add Parse.CLP Object to control ClassLevelPermissions ([#1145](https://github.com/parse-community/Parse-SDK-JS/pull/1145))
+- Add option `{ json: true }` on queries ([#1294](https://github.com/parse-community/Parse-SDK-JS/pull/1294))
+- Add IndexedDB Storage Controller ([#1297](https://github.com/parse-community/Parse-SDK-JS/pull/1297))
+- Parse.User.isCurrentAsync() for async storage ([#1298](https://github.com/parse-community/Parse-SDK-JS/pull/1298))
+
+**Improvements**
+- Add useMasterKey option to Parse.File.destroy() ([#1285](https://github.com/parse-community/Parse-SDK-JS/pull/1285))
+- User management on React-Native ([#1298](https://github.com/parse-community/Parse-SDK-JS/pull/1298))
+
+**Fixes**
+- Allow connect to LiveQuery with null fields ([#1282](https://github.com/parse-community/Parse-SDK-JS/pull/1282))
+- fromJSON: Return date if value is type `Date` ([#1293](https://github.com/parse-community/Parse-SDK-JS/pull/1293))
+- fromJSON: Allow keys to dirty, allows save fromJSON ([#1295](https://github.com/parse-community/Parse-SDK-JS/pull/1295))
+- Parse.Schema.addField accepts Pointer and Relation types ([#1281](https://github.com/parse-community/Parse-SDK-JS/pull/1281))
+
+## 2.19.0
+[Full Changelog](https://github.com/parse-community/Parse-SDK-JS/compare/2.18.0...2.19.0)
+
+**Features**
+- New error code 210 (MFA_ERROR) ([#1268](https://github.com/parse-community/Parse-SDK-JS/pull/1268))
+- New error code 211 (MFA_TOKEN_REQUIRED) ([#1268](https://github.com/parse-community/Parse-SDK-JS/pull/1268))
+- New error code 161 (FILE_DELETE_UNNAMED_ERROR) ([#1257](https://github.com/parse-community/Parse-SDK-JS/pull/1257))
+
+**Improvements**
+- Parse.File.destroy without name error message ([#1257](https://github.com/parse-community/Parse-SDK-JS/pull/1257))
+
+**Fixes**
+- Remove unnecessary object reference and comment from AddUniqueOp ([#1253](https://github.com/parse-community/Parse-SDK-JS/pull/1253))
+- Internal Referencing for Increment Dot Notation ([#1255](https://github.com/parse-community/Parse-SDK-JS/pull/1255))
+- Saving for Increment Dot Notation ([#1219](https://github.com/parse-community/Parse-SDK-JS/pull/1219))
+
+## 2.18.0
+[Full Changelog](https://github.com/parse-community/Parse-SDK-JS/compare/2.17.0...2.18.0)
+
+**Features**
+- Support query.findAll() ([#1233](https://github.com/parse-community/Parse-SDK-JS/pull/1233))
+
+**Improvements**
+- Pass objects into query.equalTo / query.notEqualTo ([#1235](https://github.com/parse-community/Parse-SDK-JS/pull/1235))
+- Improving legacy initialization setters/getters ([#1237](https://github.com/parse-community/Parse-SDK-JS/pull/1237))
+- Remove deprecated backbone options from Parse.Push ([#1238](https://github.com/parse-community/Parse-SDK-JS/pull/1238))
+- Code Coverage and Unit Tests ([#1241](https://github.com/parse-community/Parse-SDK-JS/pull/1241))
+
+**Fixes**
+- Prevent crashing LiveQueryClient if emitter error is not set ([#1241](https://github.com/parse-community/Parse-SDK-JS/pull/1241))
+- Handle LiveQuery subscription socket error ([#1241](https://github.com/parse-community/Parse-SDK-JS/pull/1241))
+- Set WeChat socket handlers before connecting ([#1241](https://github.com/parse-community/Parse-SDK-JS/pull/1241))
+- Parse.Installation validating attribute error ([#1241](https://github.com/parse-community/Parse-SDK-JS/pull/1241))
+
+## 2.17.0
+[Full Changelog](https://github.com/parse-community/Parse-SDK-JS/compare/2.16.0...2.17.0)
+
+**Improvements**
+- User LogIn with usePost option ([#1229](https://github.com/parse-community/Parse-SDK-JS/pull/1229))
+
+## 2.16.0
+[Full Changelog](https://github.com/parse-community/Parse-SDK-JS/compare/2.15.0...2.16.0)
+
+Idempotency enforcement for client requests. This deduplicates requests where the client intends to send one request to Parse Server but due to network issues the server receives the request multiple times. (Parse-Server 4.3.0+)
+**Caution, this is an experimental feature that may not be appropriate for production.**
+
+To enable use either of the following:
+* `Parse.CoreManager.set('IDEMPOTENCY', true)`
+* `Parse.idempotency = true`
+
+**Features**
+- Idempotency Request ([#1210](https://github.com/parse-community/Parse-SDK-JS/pull/1210))
+
+**Improvements**
+- Allow Pin of unsaved objects in LocalDatastore ([#1225](https://github.com/parse-community/Parse-SDK-JS/pull/1225))
+
+**Fixes**
+- crypto-js crashing React Native ([#1218](https://github.com/parse-community/Parse-SDK-JS/pull/1218))
+- Schema mismatch error on add / remove empty array on Relation  ([#1222](https://github.com/parse-community/Parse-SDK-JS/pull/1222))
+- query.select error on null fields ([#1223](https://github.com/parse-community/Parse-SDK-JS/pull/1223))
+
+## 2.15.0
+[Full Changelog](https://github.com/parse-community/Parse-SDK-JS/compare/2.14.0...2.15.0)
+
+**Features**
+- New Parse.Error 159 DUPLICATE_REQUEST ([#1189](https://github.com/parse-community/Parse-SDK-JS/pull/1189))
+
+**Fixes**
+- Live Query Subscription Error Event ([#1193](https://github.com/parse-community/Parse-SDK-JS/pull/1193))
+
+## 2.14.0
+[Full Changelog](https://github.com/parse-community/Parse-SDK-JS/compare/2.13.0...2.14.0)
+
+**New Features**
+- Passing context in destroy, saveAll, get, find hooks. ([#1159](https://github.com/parse-community/Parse-SDK-JS/pull/1159))
+- Support using aggregate on top of constructed query ([#1170](https://github.com/parse-community/Parse-SDK-JS/pull/1170))
+
+**Improvements**
+- Performance improvement for Query.eachBatch ([#1179](https://github.com/parse-community/Parse-SDK-JS/pull/1179))
+
+**Fixes**
+- Fix context for cascade saving ([#1186](https://github.com/parse-community/Parse-SDK-JS/pull/1186))
+
+## 2.13.0
+[Full Changelog](https://github.com/parse-community/Parse-SDK-JS/compare/2.12.0...2.13.0)
+
+**New Features**
+- Add Email Verification to Parse.User ([#1144](https://github.com/parse-community/Parse-SDK-JS/pull/1144))
+- Add Verify Password to Parse.User ([#1144](https://github.com/parse-community/Parse-SDK-JS/pull/1144))
+
+**Improvements**
+- Add read preference for aggregate query ([#1143](https://github.com/parse-community/Parse-SDK-JS/pull/1143))
+- Add file progress type (upload/download) ([#1140](https://github.com/parse-community/Parse-SDK-JS/pull/1140))
+- Add context to Parse.Object.save ([#1150](https://github.com/parse-community/Parse-SDK-JS/pull/1150))
+
+**Fixes**
+- File upload progress ([#1133](https://github.com/parse-community/Parse-SDK-JS/pull/1133))
+- Live Query Subscription Open Event ([#1151](https://github.com/parse-community/Parse-SDK-JS/pull/1151))
 
 ## 2.12.0
 [Full Changelog](https://github.com/parse-community/Parse-SDK-JS/compare/2.11.0...2.12.0)
